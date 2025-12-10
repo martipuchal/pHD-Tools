@@ -14,6 +14,7 @@ library(dplyr)
 library(tidyr)
 library(stringr)
 library(formattable)
+library(DT)
 
 values <- reactiveValues(model_list = c())
 tables <- reactiveValues(model_df = data.frame())
@@ -94,7 +95,7 @@ values$RT_pred  <- function(Carbons, Insaturation, model_id){
 
 # Input dataframe 
 
-A dataframe is used to buid the custom models. This dataframe contains the Fatty Acid with their retaintions times. The input of the dataframe must have the following format: FA Retention Times labeled as FAXX:X_RT in the column names and the RT in the row. And as a difference between the model dataframe and the sample dataframe is the model datafraem have only one row.
+A dataframe is used to build the custom models. This dataframe contains the Fatty Acids with their retention times. The dataframe's input must have the following format: FA Retention Times are labeled as FAXX:X_RT in the column names and the RT in the row. And as a difference between the model dataframe and the sample dataframe, the model dataframe has only one row.
 
 File path example: ../data/250312_FAME2023_int_FAMEMIX_RT.csv
 
@@ -103,7 +104,7 @@ File path example: ../data/250312_FAME2023_int_FAMEMIX_RT.csv
 
 fluidPage(
   fluidRow(
-    column(12,textAreaInput("model_load",label = "DataFrame to build the model",
+    column(12,textAreaInput("model_load",label = "DataFrame to build the model as a .csv",
                             placeholder = "Enter the path to the file....",
                             width = "100%",
                             height = "35px",
@@ -137,6 +138,9 @@ renderTable(tables$model_df,rownames = TRUE)
 
 ```
 
+
+With the previously checked dataframe from above, we can generate a model to predict the RT of the compounds. This dynamic report can generate a collection of different models using the data frame and an identifier. This identifier MUST be unique (it is only going to take into account the last time the identifier is used, overwriting the previous information). However, on the model list, the model is going to be registered twice. Next to the button "Add," which adds the new model, we have the button "Clear." This button deletes ALL the models stored in the report. There is no method to delete only one model without deleting the rest. The last button on this section is to load the models previously generated with the current data.
+
 ```{r build model list, echo=FALSE}
 
 fluidPage(
@@ -144,7 +148,7 @@ fluidPage(
     column(12,
       textAreaInput("model_name", 
                    label = "Name the model", 
-                   placeholder = "Enter model name here...",
+                   placeholder = "Enter model identifier here...",
                    width = "50%",
                    height = "50px",
                    resize = "vertical")
@@ -281,11 +285,12 @@ renderPrint(
 
 # Load sample data
 
+In order to load the data, a CSV format is required and no hierarchical structure. In order to process files extracted from the qualitative or quantitative programs, it is recommended to use the FAME_opener.py program. This program converts the hierarchical file structure from the most common program and converts it to a flat CSV—this enables the correct treatment with this report. By parsing the path and the file name, this report opens the .csv from the sample.
 
 ```{r sample opening,echo=FALSE}
 fluidPage(
   fluidRow(
-    column(12,textAreaInput("sample_load",label = "DataFrame to analyse",
+    column(12,textAreaInput("sample_load",label = "DataFrame to analyse as a .csv",
                             placeholder = "Enter the path to the file....",
                             width = "100%",
                             height = "35px",
@@ -299,11 +304,15 @@ fluidPage(
 observeEvent(input$sample_open,{
               tables$sample_df <- error_manegement(input$sample_load)})
 
-renderTable(tables$sample_df,rownames = TRUE)
+renderDT(tables$sample_df,)
 ```
 
 
 # Analyse the data
+
+With the data loaded, we are able to analyze the RT and the area from the FA16.0. This can work as a secondary quality control check in order to correct the identification of these compounds. On the column of the FA16.0_Area, we add the color red based on the abundance of this compound in the total area. If there is some color, it means the sample has less than 20% of FA16.0. This compound is typically more abundant than the 20%.
+
+Another flag program in this analysis is the ratio between the real RT and the theoretical RT. We have performed the ratio from the Real RT / Theoretical RT, and in the cases where the Real RT was 1.5 times bigger than the theoretical, this RT has been marked with red, and in the cases where it was 0.5, it has been marked in blue. We decided to perform the ratios instead of the subtraction in order to correct by RT. We have observed that higher RTs have higher error. With this evidence we only want to detect samples or compounds with a lot of error in the identification, not error in the RT prediction.
 
 ```{r,echo=FALSE}
 fluidPage(
@@ -393,6 +402,7 @@ output$formatted_table <- renderFormattable({
   })
 }
 })
+
 
 formattableOutput("formatted_table")
 
