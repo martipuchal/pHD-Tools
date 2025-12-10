@@ -96,7 +96,7 @@ values$RT_pred  <- function(Carbons, Insaturation, model_id){
 
 A dataframe is used to buid the custom models. This dataframe contains the Fatty Acid with their retaintions times. The input of the dataframe must have the following format: FA Retention Times labeled as FAXX:X_RT in the column names and the RT in the row. And as a difference between the model dataframe and the sample dataframe is the model datafraem have only one row.
 
-File path example: /home/martipuchal/Doctorat/work/Scripts/250312_FAME2023_int_FAMEMIX_RT.csv
+File path example: ../data/250312_FAME2023_int_FAMEMIX_RT.csv
 
 
 ```{r open models, echo=FALSE}
