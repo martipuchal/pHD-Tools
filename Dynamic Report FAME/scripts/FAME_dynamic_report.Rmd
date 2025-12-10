@@ -1,0 +1,410 @@
+---
+title: "FAME dynamic"
+author: "Martí Puchal Batriu"
+date: "2025-12-09"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#library(shinyFiles)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(formattable)
+
+values <- reactiveValues(model_list = c())
+tables <- reactiveValues(model_df = data.frame())
+data_path <- "../data/"
+
+```
+
+
+```{r setup functions, include=FALSE}
+
+# Open the different files without shuting the shiny
+error_manegement <- function(file_name_opener){
+  
+  tryCatch({
+  # Try block
+  # This will cause an error
+    x <- read.csv(file_name_opener)
+
+  return(x)
+}, error = function(e) {
+  # Except block
+  message("Error occurred: ", e$message)
+  return(Inf)  # Default value
+}, warning = function(w) {
+  # Warning handler
+  message("Warning: ", w$message)
+}, finally = {
+  # Finally block (always runs)
+  message("File Opened")
+})
+  return("The file was not correcly oppened")
+}
+
+
+# Process the raw df from the model function
+df_gen <- function(df_input){
+  df_input <- df_input %>% select(ends_with("RT"))
+  met_202X <- gsub(".Results_RT", "",colnames(df_input))
+  
+  vec <- lapply(colnames(df_input),function(x){
+  s <- str_split(x, "[^0-9]+", simplify = TRUE)
+  return(s[2:3])})
+  
+  new_cols <- as.data.frame(do.call(rbind, vec))
+  colnames(new_cols) <-  c("Carbon","Insat")
+  new_cols$RT <- t(df_input)[,1]
+  df_output <- new_cols
+  row.names(df_output) <- met_202X
+  df_output[] <- lapply(df_output, as.numeric)
+  return(df_output)
+}
+
+# Function to run the different models
+values$RT_pred  <- function(Carbons, Insaturation, model_id){
+  if (Insaturation==0){
+    sample_rt <- as.numeric(predict(values$SFA_lm[[model_id]], data.frame("Carbon"=c(Carbons))))
+    
+  } else if(Insaturation==1){
+    sample_rt <- as.numeric(predict(values$MUFA_lm[[model_id]], data.frame("Carbon"=c(Carbons))))
+  } else{
+    if (Carbons == 18){
+      sample_rt <- as.numeric(predict(values$C18_lm[[model_id]], data.frame("Insat"=c(Insaturation))))
+    } else if (Carbons == 20){
+      sample_rt <- as.numeric(predict(values$C20_lm[[model_id]], data.frame("Insat"=c(Insaturation))))
+    } else if (Carbons == 22){
+      sample_rt <- as.numeric(predict(values$C22_lm[[model_id]], data.frame("Insat"=c(Insaturation))))
+    } else{
+      sample_rt <- "na"
+    }
+  }
+  return(sample_rt)
+}
+
+
+```
+
+
+
+# Input dataframe 
+
+A dataframe is used to buid the custom models. This dataframe contains the Fatty Acid with their retaintions times. The input of the dataframe must have the following format: FA Retention Times labeled as FAXX:X_RT in the column names and the RT in the row. And as a difference between the model dataframe and the sample dataframe is the model datafraem have only one row.
+
+File path example: /home/martipuchal/Doctorat/work/Scripts/250312_FAME2023_int_FAMEMIX_RT.csv
+
+
+```{r open models, echo=FALSE}
+
+fluidPage(
+  fluidRow(
+    column(12,textAreaInput("model_load",label = "DataFrame to build the model",
+                            placeholder = "Enter the path to the file....",
+                            width = "100%",
+                            height = "35px",
+                            resize = "vertical")
+           
+    )
+  ),
+  fluidRow(
+    column(12,actionButton("model_open",label = "Open")
+           
+    )
+  ),
+  tags$br(),
+  tags$br()
+)
+
+
+
+
+observeEvent(input$model_open,{
+  df <- error_manegement(input$model_load)
+  if (is.data.frame(df)){
+              tables$model_df <- df_gen(df)
+}else{tables$model_df <- df}
+              })
+
+
+
+renderTable(tables$model_df,rownames = TRUE)
+
+
+```
+
+```{r build model list, echo=FALSE}
+
+fluidPage(
+  fluidRow(
+    column(12,
+      textAreaInput("model_name", 
+                   label = "Name the model", 
+                   placeholder = "Enter model name here...",
+                   width = "50%",
+                   height = "50px",
+                   resize = "vertical")
+    )
+  ),
+  fluidRow(
+    column(12,
+      style = "margin-top: 15px;",
+      actionButton("add_model", label = "Add", 
+                  style = "margin-right: 10px;"),
+      actionButton("Clear_model", label = "Clear",
+                  style = "margin-right: 10px;"),
+      actionButton("Load_defauts", label = "Load default models")
+    )
+  ),
+  tags$br(),
+  tags$br()
+)
+
+
+
+observeEvent(input$Clear_model, 
+              {
+                values$model_list <- c()
+                print(getwd())
+                })
+
+observeEvent(input$add_model,{
+  
+  if (is.data.frame(tables$model_df)){if (ncol(tables$model_df)>=1){
+  data_set <- tables$model_df
+  
+  SFA <- data_set[data_set$Insat==0,]
+  values$SFA_lm[[input$model_name]] <- lm(RT~Carbon,SFA)
+  
+  MUFA <- data_set[data_set$Insat==1,]
+  values$MUFA_lm[[input$model_name]] <- lm(RT~Carbon,MUFA)
+  
+  C18 <- data_set[data_set$Carbon==18,]
+  values$C18_lm[[input$model_name]] <- lm(RT~Insat,C18)
+  
+  C20 <- data_set[data_set$Carbon==20,]
+  values$C20_lm[[input$model_name]] <- lm(RT~Insat,C18)
+  
+  C22 <- data_set[data_set$Carbon==22,]
+  values$C22_lm[[input$model_name]] <- lm(RT~Insat,C18)
+  
+  values$model_list <- append(values$model_list,input$model_name)
+  }}
+                           
+  })
+observeEvent(input$Load_defauts,{
+  
+  RT_FA <- read.delim(paste0(data_path,"RT_FA.tsv"))
+  RT_FA_2023 <- read.csv(paste0(data_path,"250312_FAME2023_int_FAMEMIX_RT.csv"))
+  RT_FA_2024 <- read.csv(paste0(data_path,"250312_FAME2024_int_FAMEMIX_RT.csv"))
+
+  # Process df function
+  df_gen <- function(df_input){
+  df_input <- df_input %>% select(ends_with("RT"))
+  met_202X <- gsub(".Results_RT", "",colnames(df_input))
+  
+  vec <- lapply(colnames(df_input),function(x){
+  s <- str_split(x, "[^0-9]+", simplify = TRUE)
+  return(s[2:3])})
+  
+  new_cols <- as.data.frame(do.call(rbind, vec))
+  colnames(new_cols) <-  c("Carbon","Insat")
+  new_cols$RT <- t(df_input)[,1]
+  df_output <- new_cols
+  row.names(df_output) <- met_202X
+  df_output[] <- lapply(df_output, as.numeric)
+  return(df_output)
+  }
+
+  RT_FA_2023 <- df_gen(RT_FA_2023)
+  RT_FA_2024 <- df_gen(RT_FA_2024)
+  
+  count = 0
+  data_names <- c("RT_FA","RT_FA_2023","RT_FA_2024")
+
+for (data_set in list(RT_FA,RT_FA_2023,RT_FA_2024)){
+  
+  # Build the linear regresion for each of the datasets 
+  count = count+1
+  SFA <- data_set[data_set$Insat==0,]
+  values$SFA_lm[[data_names[count]]] <- lm(RT~Carbon,SFA)
+  
+  MUFA <- data_set[data_set$Insat==1,]
+  values$MUFA_lm[[data_names[count]]] <- lm(RT~Carbon,MUFA)
+  
+  C18 <- data_set[data_set$Carbon==18,]
+  values$C18_lm[[data_names[count]]] <- lm(RT~Insat,C18)
+  
+  C20 <- data_set[data_set$Carbon==20,]
+  values$C20_lm[[data_names[count]]] <- lm(RT~Insat,C18)
+  
+  C22 <- data_set[data_set$Carbon==22,]
+  values$C22_lm[[data_names[count]]] <- lm(RT~Insat,C18)
+  
+  values$model_list <- append(values$model_list,data_names[count])
+}
+  
+})
+
+reactive(
+if (length(values$model_list)==0 & is.null(values$model_list)){
+    values$n=1
+    
+  }else{
+    values$n=1:length(values$model_list)
+    
+  }
+)
+
+fluidPage(
+  
+  
+renderPrint(
+            paste0(
+              paste0(
+                  paste0(
+                    "Model ",
+                    values$n
+                    ),": "
+                  ),
+                  values$model_list
+              ))
+)
+
+
+
+```
+
+# Load sample data
+
+
+```{r sample opening,echo=FALSE}
+fluidPage(
+  fluidRow(
+    column(12,textAreaInput("sample_load",label = "DataFrame to analyse",
+                            placeholder = "Enter the path to the file....",
+                            width = "100%",
+                            height = "35px",
+                            resize = "vertical"))
+  ),
+  fluidRow(
+    column(12,actionButton("sample_open",label = "Open"))
+  )
+)
+
+observeEvent(input$sample_open,{
+              tables$sample_df <- error_manegement(input$sample_load)})
+
+renderTable(tables$sample_df,rownames = TRUE)
+```
+
+
+# Analyse the data
+
+```{r,echo=FALSE}
+fluidPage(
+  fluidRow(
+    column(12,selectInput("choices_models", label = "Choose the model to work with",
+              choices = NULL)
+    )
+    
+  ),
+  fluidRow(
+    column(12,actionButton("analyse_sample",label = "Analyse"))
+  )
+)
+
+
+
+
+model_names <- reactive({
+    values$model_list})
+
+observeEvent(model_names(), {
+    updateSelectInput(session, 
+                      "choices_models",
+                      choices = model_names())
+  })
+
+
+observeEvent(input$analyse_sample,{
+  
+  if (!is.null(tables$sample_df) & is.data.frame(tables$sample_df)){
+
+area_df <- tables$sample_df %>% select(ends_with("Area"))
+
+area_sum <- apply(area_df,1,sum)
+FA16.0_prop <- tables$sample_df[grep("FA16\\.0.+Area",colnames(tables$sample_df),value = TRUE)]/area_sum
+FA16.0_prop[FA16.0_prop>=0.2] <- 0.2
+FA16.0_prop <- as.numeric(FA16.0_prop[,1])
+color_palette <- colorRampPalette(c( "red","white"))(20)
+
+
+format_list <- list(
+  FA16.0.Results_Area	 = formatter("span",
+    style = x ~ {
+      style(
+        display = "block",
+        "border-radius" = "4px",
+        "background-color" = color_palette[as.integer(FA16.0_prop * 100)]
+      )
+    }
+  )
+)    
+
+rt_fa_names <- grep("RT",colnames(tables$sample_df),value = TRUE)
+
+CI <- function(rt_names){
+  vec <- lapply(rt_names,function(x){
+    s <- str_split(x, "[^0-9]+", simplify = TRUE)
+    return(s[2:3])})
+
+  new_cols <- as.data.frame(do.call(rbind, vec))
+  colnames(new_cols) <-  c("Carbon","Insat")
+  row.names(new_cols) <- rt_names
+  
+  return(new_cols)
+}
+
+
+ratios_rt <- sweep(tables$sample_df[rt_fa_names], 2, apply(CI(rt_fa_names),1,function(x){values$RT_pred(as.numeric(x[1]),as.numeric(x[2]),input$choices_models)}), "/")
+
+color_list <- list()
+count <- 0
+
+for (cols in colnames(ratios_rt)){
+  count = count + 1
+  
+  color_list[[count]] <- ifelse(ratios_rt[[cols]] > 1.5, "red",
+                                ifelse(ratios_rt[[cols]] < 0.5,"blue","black"))
+  
+  format_list[[cols]] <- local({
+    current_count <- count  # Capture current value
+    formatter("span", style = x ~ style("color" = color_list[[current_count]]))
+  })
+}
+
+output$formatted_table <- renderFormattable({
+    formattable(tables$sample_df, format_list)
+  })
+}
+})
+
+formattableOutput("formatted_table")
+
+```
+
+
+
+
+
+
+
+
+
+
+
