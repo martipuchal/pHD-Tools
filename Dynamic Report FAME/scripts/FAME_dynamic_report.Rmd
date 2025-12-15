@@ -15,9 +15,13 @@ library(tidyr)
 library(stringr)
 library(formattable)
 library(DT)
+library(lubridate)
+library(ggplot2)
+library(plotly)
 
 values <- reactiveValues(model_list = c())
-tables <- reactiveValues(model_df = data.frame())
+tables <- reactiveValues(model_df = data.frame(),plot_df_ing = data.frame())
+plots <- reactiveValues()
 data_path <- "../data/"
 
 ```
@@ -304,7 +308,7 @@ fluidPage(
 observeEvent(input$sample_open,{
               tables$sample_df <- error_manegement(input$sample_load)})
 
-renderDT(tables$sample_df,)
+renderDT(tables$sample_df)
 ```
 
 
@@ -314,7 +318,7 @@ With the data loaded, we are able to analyze the RT and the area from the FA16.0
 
 Another flag program in this analysis is the ratio between the real RT and the theoretical RT. We have performed the ratio from the Real RT / Theoretical RT, and in the cases where the Real RT was 1.5 times bigger than the theoretical, this RT has been marked with red, and in the cases where it was 0.5, it has been marked in blue. We decided to perform the ratios instead of the subtraction in order to correct by RT. We have observed that higher RTs have higher error. With this evidence we only want to detect samples or compounds with a lot of error in the identification, not error in the RT prediction.
 
-```{r,echo=FALSE}
+```{r flag table display,echo=FALSE}
 fluidPage(
   fluidRow(
     column(12,selectInput("choices_models", label = "Choose the model to work with",
@@ -409,8 +413,105 @@ formattableOutput("formatted_table")
 ```
 
 
+# Plot the Ingection time
+
+```{r ingection plot, echo=FALSE}
+
+fluidPage(
+  fluidRow(
+    column(12,selectInput("choices_Type", label = "Choose Type to plot",
+              choices = NULL)
+    )
+    
+  ),
+  fluidRow(
+    column(12,selectInput("choices_Type_batch", label = "Choose Batch/day to plot",
+              choices = NULL))
+  ),
+  fluidRow(
+    column(12,selectInput("choices_Type_meta", label = "Choose a FA to plot",
+              choices = NULL))
+  ),
+  fluidRow(
+    column(12,actionButton("plot_it",label = "Plot it"))
+  )
+)
+
+# Fare que s'actualitzi tot el rato peró si hi han molts processos o es fa lenta la paguina es pot posar un boto perque actualitzi el dataframe per fer els plots per evitar que cada canvi que es fa al df afecti al plot
+
+type_df_choices <- reactive({
+    tables$sample_df})
+
+observeEvent(type_df_choices(), {
+  if ("Acq..Date.Time" %in% colnames(tables$sample_df)){
+  tables$plot_df_ing <- tables$sample_df
+  
+  # Adding necessari columns in order to plot the ingection
+  tables$plot_df_ing["Type"] <- str_extract(tables$plot_df_ing$Name,"[A-Z][a-z]+")
+  tables$plot_df_ing["Inf_time"] <- as.POSIXct(tables$plot_df_ing$Acq..Date.Time, format="%m/%d/%Y %I:%M %p")
+  tables$plot_df_ing["Day"] <- lubridate::day(tables$plot_df_ing$Inf_time)
+  }
+  
+  if (is.data.frame(tables$plot_df_ing)){
+    if ("Type" %in% colnames(tables$plot_df_ing)){
+      updateSelectInput(session, 
+                      "choices_Type",
+                      choices = c(levels(as.factor(tables$plot_df_ing$Type)),"All"))
+    }
+  }
+  })
+
+observeEvent(input$choices_Type,{
+  if (is.data.frame(tables$plot_df_ing)){
+    if ("Type" %in% colnames(tables$plot_df_ing)){
+      if ("Day" %in% colnames(tables$plot_df_ing)){
+      updateSelectInput(session, 
+                      "choices_Type_batch",
+                      choices = levels(as.factor(lubridate::day(tables$plot_df_ing$Inf_time))))
+      }}
+    updateSelectInput(session, 
+                      "choices_Type_meta",
+                      choices = grep("FA.*Area",colnames(tables$plot_df_ing),value = T))
+  }
+})
+
+observeEvent(input$plot_it,{
+  
+  if (!input$choices_Type_batch == "" & !input$choices_Type_meta == "" & !input$choices_Type == ""){
+    if (input$choices_Type == "All"){
+      print(colnames(tables$plot_df_ing))
+    print(tables$plot_df_ing[,"Name"][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)])
+  plots$ING_x <- tables$plot_df_ing$Inf_time[tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)]
+  plots$ING_y <- tables$plot_df_ing[,input$choices_Type_meta][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)]
+  plots$ING_snames <- tables$plot_df_ing[,"Name"][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)]
+  plots$ING_type <- tables$plot_df_ing$Type[tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)]
+    }else{
+      plots$ING_x <- tables$plot_df_ing$Inf_time[tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch) & tables$plot_df_ing$Type == input$choices_Type]
+  plots$ING_y <- tables$plot_df_ing[,input$choices_Type_meta][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch) & tables$plot_df_ing$Type == input$choices_Type]
+  plots$ING_snames <- tables$plot_df_ing[,"Name"][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch) & tables$plot_df_ing$Type == input$choices_Type]
+    }
+}})
 
 
+renderPlotly({
+  if (input$choices_Type == "All"){
+    
+   gg <- ggplot(mapping = aes(plots$ING_x, plots$ING_y))+
+  geom_smooth()+
+  geom_point(aes(color = plots$ING_type,text = plots$ING_snames))+
+  labs(x = "Area" , y = "Adquisition time", title = paste0("Plot of the Ingetion time of the ",input$choices_Type_meta),color = "Legend")
+   ggplotly(gg, tooltip = "text")
+    }else{
+  gg <- ggplot(mapping = aes(plots$ING_x, plots$ING_y))+
+  geom_smooth()+
+  geom_point(aes(text = plots$ING_snames))+
+  labs(x = "Area" , y = "Adquisition time", title = paste0("Plot of the Ingetion time of the ",input$choices_Type_meta))
+  ggplotly(gg, tooltip = "text")
+  }
+  })
+
+
+```
 
 
 
