@@ -345,13 +345,14 @@ observeEvent(model_names(), {
 
 
 observeEvent(input$analyse_sample,{
-  
+ 
   if (!is.null(tables$sample_df) & is.data.frame(tables$sample_df)){
 
 area_df <- tables$sample_df %>% select(ends_with("Area"))
 
 area_sum <- apply(area_df,1,sum)
 FA16.0_prop <- tables$sample_df[grep("FA16\\.0.+Area",colnames(tables$sample_df),value = TRUE)]/area_sum
+
 FA16.0_prop[FA16.0_prop>=0.2] <- 0.2
 FA16.0_prop <- as.numeric(FA16.0_prop[,1])
 color_palette <- colorRampPalette(c( "red","white"))(20)
@@ -360,7 +361,7 @@ color_palette <- colorRampPalette(c( "red","white"))(20)
 format_list <- list(
   FA16.0.Results_Area	 = formatter("span",
     style = x ~ {
-      style(
+      formattable::style(
         display = "block",
         "border-radius" = "4px",
         "background-color" = color_palette[as.integer(FA16.0_prop * 100)]
@@ -397,7 +398,7 @@ for (cols in colnames(ratios_rt)){
   
   format_list[[cols]] <- local({
     current_count <- count  # Capture current value
-    formatter("span", style = x ~ style("color" = color_list[[current_count]]))
+    formatter("span", style = x ~ formattable::style("color" = color_list[[current_count]]))
   })
 }
 
@@ -413,16 +414,14 @@ formattableOutput("formatted_table")
 ```
 
 
-# Plot the Ingection time
+# Plot the injection time
 
-```{r ingection plot, echo=FALSE}
+```{r injection plot, echo=FALSE}
 
 fluidPage(
   fluidRow(
     column(12,selectInput("choices_Type", label = "Choose Type to plot",
-              choices = NULL)
-    )
-    
+              choices = NULL))
   ),
   fluidRow(
     column(12,selectInput("choices_Type_batch", label = "Choose Batch/day to plot",
@@ -446,7 +445,13 @@ observeEvent(type_df_choices(), {
   if ("Acq..Date.Time" %in% colnames(tables$sample_df)){
   tables$plot_df_ing <- tables$sample_df
   
-  # Adding necessari columns in order to plot the ingection
+  Area_df <- tables$sample_df[,grep("Area",colnames(tables$sample_df),value = TRUE)]
+  tables$Ratios_df <- (Area_df/apply(Area_df, 1,sum))*100
+  tables$RT_df <- tables$sample_df[,grep("RT",colnames(tables$sample_df),value = TRUE)]
+  
+  
+  
+  # Adding necessari columns in order to plot the injection
   tables$plot_df_ing["Type"] <- str_extract(tables$plot_df_ing$Name,"[A-Z][a-z]+")
   tables$plot_df_ing["Inf_time"] <- as.POSIXct(tables$plot_df_ing$Acq..Date.Time, format="%m/%d/%Y %I:%M %p")
   tables$plot_df_ing["Day"] <- lubridate::day(tables$plot_df_ing$Inf_time)
@@ -467,7 +472,7 @@ observeEvent(input$choices_Type,{
       if ("Day" %in% colnames(tables$plot_df_ing)){
       updateSelectInput(session, 
                       "choices_Type_batch",
-                      choices = levels(as.factor(lubridate::day(tables$plot_df_ing$Inf_time))))
+                      choices = c(levels(as.factor(lubridate::day(tables$plot_df_ing$Inf_time))),"All"))
       }}
     updateSelectInput(session, 
                       "choices_Type_meta",
@@ -479,43 +484,198 @@ observeEvent(input$plot_it,{
   
   if (!input$choices_Type_batch == "" & !input$choices_Type_meta == "" & !input$choices_Type == ""){
     if (input$choices_Type == "All"){
-      print(colnames(tables$plot_df_ing))
-    print(tables$plot_df_ing[,"Name"][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)])
+      if (input$choices_Type_batch == "All"){
+        
+        plots$ING_x <- tables$plot_df_ing$Inf_time
+        plots$ING_y <- tables$Ratios_df[,input$choices_Type_meta]
+        
+        plots$ING_snames <- tables$plot_df_ing[,"Name"]
+        plots$ING_type <- tables$plot_df_ing$Type
+        plots$ING_batch <- tables$plot_df_ing$Day
+        
+      }else{
   plots$ING_x <- tables$plot_df_ing$Inf_time[tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)]
-  plots$ING_y <- tables$plot_df_ing[,input$choices_Type_meta][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)]
+  plots$ING_y <- tables$Ratios_df[,input$choices_Type_meta][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)]
+  
   plots$ING_snames <- tables$plot_df_ing[,"Name"][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)]
   plots$ING_type <- tables$plot_df_ing$Type[tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch)]
-    }else{
+    }}else{
+      if(input$choices_Type_batch == "All"){
+        plots$ING_x <- tables$plot_df_ing$Inf_time[ tables$plot_df_ing$Type == input$choices_Type]
+  plots$ING_y <- tables$Ratios_df[,input$choices_Type_meta][tables$plot_df_ing$Type == input$choices_Type]
+  plots$ING_snames <- tables$plot_df_ing[,"Name"][ tables$plot_df_ing$Type == input$choices_Type]
+  plots$ING_batch <- tables$plot_df_ing$Day[ tables$plot_df_ing$Type == input$choices_Type]
+      }else{
       plots$ING_x <- tables$plot_df_ing$Inf_time[tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch) & tables$plot_df_ing$Type == input$choices_Type]
-  plots$ING_y <- tables$plot_df_ing[,input$choices_Type_meta][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch) & tables$plot_df_ing$Type == input$choices_Type]
+  plots$ING_y <- tables$Ratios_df[,input$choices_Type_meta][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch) & tables$plot_df_ing$Type == input$choices_Type]
   plots$ING_snames <- tables$plot_df_ing[,"Name"][tables$plot_df_ing$Day==as.numeric(input$choices_Type_batch) & tables$plot_df_ing$Type == input$choices_Type]
-    }
-}})
+    }}
 
-
-renderPlotly({
-  if (input$choices_Type == "All"){
-    
-   gg <- ggplot(mapping = aes(plots$ING_x, plots$ING_y))+
-  geom_smooth()+
-  geom_point(aes(color = plots$ING_type,text = plots$ING_snames))+
-  labs(x = "Area" , y = "Adquisition time", title = paste0("Plot of the Ingetion time of the ",input$choices_Type_meta),color = "Legend")
-   ggplotly(gg, tooltip = "text")
-    }else{
-  gg <- ggplot(mapping = aes(plots$ING_x, plots$ING_y))+
-  geom_smooth()+
-  geom_point(aes(text = plots$ING_snames))+
-  labs(x = "Area" , y = "Adquisition time", title = paste0("Plot of the Ingetion time of the ",input$choices_Type_meta))
-  ggplotly(gg, tooltip = "text")
   }
   })
+
+renderPlotly({
+  gg <- ggplot(mapping = aes(plots$ING_x, plots$ING_y))+
+  geom_smooth()
+  if (input$choices_Type_batch == "All"){
+    point_shape <- as.factor(plots$ING_batch)
+  }else{
+    point_shape <- as.factor(1)
+  }
+  if (input$choices_Type == "All"){
+   gg <- gg+
+  geom_point(aes(color = plots$ING_type,text = plots$ING_snames,shape = point_shape))+
+  labs(x = "Area" , y = "Adquisition time", title = paste0("Plot of the injetion time of the ",input$choices_Type_meta),color = "Legend")
+   ggplotly(gg, tooltip = "text")
+    }else{
+  gg <- gg+
+  geom_point(aes(text = plots$ING_snames,shape = point_shape))+
+  labs(x = "Area" , y = "Adquisition time", title = paste0("Plot of the injetion time of the ",input$choices_Type_meta),shape = "Legend")
+  
+    }
+  ggplotly(gg, tooltip = "text")
+  })
+
 
 
 ```
 
 
+# index calculation
+
+
+```{r index calculations, echo = FALSE}
 
 
 
+observeEvent(type_df_choices(), {
+  if(is.data.frame(tables$sample_df)){
+  df <- tables$sample_df
+  Area_df <- df[,grep("Area",colnames(df),value = TRUE)]
+RT_df <- df[,grep("RT",colnames(df),value = TRUE)]
+  
 
+
+ratios_df <- (Area_df/apply(Area_df, 1,sum))*100
+
+ratios_df_fa <- ratios_df[,grep("FA",colnames(ratios_df),value = TRUE)]
+
+
+
+comp_df <-as.data.frame( t(as.data.frame(lapply(str_split(gsub("\\._","",gsub("[A-Z]","",toupper(gsub("n",".",colnames(ratios_df_fa))))),"\\."),function(x){if (length(x)<3){
+    x <- as.numeric(c(x,"0"))
+}else{as.numeric(x)}}),col.names = colnames(ratios_df_fa))))
+colnames(comp_df) <- c("Carbs","Ins","n")
+
+SFA <- apply(ratios_df_fa[,row.names(comp_df[comp_df$Ins==0,])],1,sum)
+UFA <- apply(ratios_df_fa[,row.names(comp_df[comp_df$Ins>0,])],1,sum)
+MUFA <- apply(ratios_df_fa[,row.names(comp_df[comp_df$Ins==1,])],1,sum)
+PUFA <- apply(ratios_df_fa[,row.names(comp_df[comp_df$Ins>1,])],1,sum)
+PUFAn3 <- apply(ratios_df_fa[,row.names(comp_df[comp_df$Ins>1 & comp_df$n == 3,])],1,sum)
+PUFAn6 <- apply(ratios_df_fa[,row.names(comp_df[comp_df$Ins>1 & comp_df$n == 6,])],1,sum)
+
+ACL <- apply(ratios_df_fa,1,function(x){return(sum(as.numeric(comp_df[names(x),"Carbs"])*as.numeric(x))/100)})
+
+DBI <- apply(ratios_df_fa[,row.names(comp_df[comp_df$Ins>0,])], 1,function(x){return(sum(x*comp_df[names(x),"Ins"]))} )
+
+index_PI <- list(0.025,1,2,4,6,8)
+PI <- apply(ratios_df_fa[,row.names(comp_df[comp_df$Ins>0,])], 1,function(x){return(sum(x*sapply(comp_df[names(x),"Ins"],function(z){index_PI[[z]]})))} )
+
+tables$index_df <- data.frame(list(SFA,UFA,MUFA,PUFA,PUFAn3,PUFAn6,ACL,DBI,PI),row.names = df$Name)
+colnames(tables$index_df) <- c("SFA","UFA","MUFA","PUFA","PUFAn3","PUFAn6","ACL","DBI","PI")
+
+
+shorcut <- function(x){
+  ret <- list()
+  for (n in seq_along(x)){
+    e <- x[[n]]
+    if (length(grep(e[1],colnames(ratios_df_fa))) != 0&
+        length(grep(e[2],colnames(ratios_df_fa))) != 0){
+
+    ret[[(length(ret)+1)]] <- c(ratios_df_fa[,grep(e[1],colnames(ratios_df_fa),value = TRUE)]/ratios_df_fa[,grep(e[2],colnames(ratios_df_fa),value = TRUE)])
+    def_cols <<- c(def_cols,vec_colanmes[[n]])
+    
+  }
+  
+  
+  }
+  return(ret)
+}
+
+
+vec_colanmes <- c("18.0/16.0","20.0/18.0","22.0/20.0","24.0/22.0","26.0/24.0",
+                  "20.1n9/18.1n9","22.1n9/20.1n9","24.1n9/22.1n9",
+                  "16.1n7/16.0","18.1n7/16.1n7",
+                  "18.3n6/18.2n6","20.2n6/18.2n6","20.3n6/18.3n6","20.3n6/20.2n6","20.4n6/20.3n6","20.4n6/20.3n6","22.4n6/20.4n6","24.4n6/22.4n6","22.5n6/24.5n6",
+                  "18.4n3/18.3n3","20.3n3/18.3n3","20.4n3/18.4n3","20.4n3/20.3n3","20.5n3/20.4n3","22.5n3/20.5n3","24.5n3/22.5n5","24.6n3/24.5n3","22.6n3/24.6n3")
+
+def_cols <- c()
+out_frame <- data.frame(
+  list(shorcut(list(
+    c("18\\.0\\.","16\\.0\\."),
+    c("20\\.0\\.","18\\.0\\."),
+    c("22\\.0\\.","20\\.0\\."),
+    c("24\\.0\\.","22\\.0\\."),
+    c("26\\.0\\.","24\\.0\\."),
+    c("20\\.1n9\\.","18\\.1n9\\."),
+    c("22\\.1n9\\.","20\\.1n9\\."),
+    c("24\\.1n9\\.","22\\.1n9\\."),
+    c("16\\.1n7\\.","16\\.0\\."),
+    c("18\\.1n7\\.","16\\.1n7\\."),
+    c("18\\.3n6\\.","18\\.2n6\\."),
+    c("20\\.2n6\\.","18\\.2n6\\."),
+    c("20\\.3n6\\.","18\\.3n6\\."),
+    c("20\\.3n6\\.","20\\.2n6\\."),
+    c("20\\.4n6\\.","20\\.3n6\\."),
+    c("22\\.4n6\\.","20\\.4n6\\."),
+    c("24\\.4n6\\.","22\\.4n6\\."),
+    c("24\\.5n6\\.","24\\.4n6\\."),
+    c("22\\.5n6\\.","24\\.5n6\\."),
+    c("18\\.4n3\\.","18\\.3n3\\."),
+    c("20\\.3n3\\.","18\\.3n3\\."),
+    c("20\\.4n3\\.","18\\.4n3\\."),
+    c("20\\.4n3\\.","20\\.3n3\\."),
+    c("20\\.5n3\\.","20\\.4n3\\."),
+    c("22\\.5n3\\.","20\\.5n3\\."),
+    c("24\\.5n3\\.","22\\.5n3\\."),
+    c("24\\.6n3\\.","24\\.5n3\\."),
+    c("22\\.6n3\\.","24\\.6n3\\.")))
+    
+  ),row.names = df$Name
+)
+colnames(out_frame) <- def_cols
+
+tables$P_S <- out_frame
+
+
+
+}})
+
+output$index_dt <- DT::renderDT({
+
+  
+  DT::formatRound(DT::datatable(tables$index_df),columns =c("SFA","UFA","MUFA","PUFA","PUFAn3","PUFAn6","ACL","DBI","PI"), digits = 3)  # Simple version first
+})
+
+DT::dataTableOutput("index_dt")
+
+
+
+```
+
+
+# Ratio Producte/Substrat
+
+```{r Producte/Substrat, echo=FALSE}
+
+output$PS_dt <- DT::renderDT({
+
+  DT::formatRound(DT::datatable(tables$P_S ),columns = 1:ncol(tables$P_S), digits = 3)  # Simple version first
+})
+
+DT::dataTableOutput("PS_dt")
+
+
+
+```
 
